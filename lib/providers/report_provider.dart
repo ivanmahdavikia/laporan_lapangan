@@ -65,6 +65,7 @@ class ReportProvider extends ChangeNotifier {
     String shipment = '',
     String jobNo = '',
     int photosPerPage = 8,
+    int targetPages = 12,
   }) async {
     _isLoading = true;
     _error = null;
@@ -78,6 +79,7 @@ class ReportProvider extends ChangeNotifier {
         inspectorName: inspectorName,
         referenceId: referenceId,
         photosPerPage: photosPerPage,
+        targetPages: targetPages,
         pemasok: pemasok,
         namaKapal: namaKapal,
         shipment: shipment,
@@ -115,11 +117,13 @@ class ReportProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> updatePhotoMetadata(int index, String type, String category) async {
+  Future<void> updatePhotoMetadata(int index, String type, String category, bool isFullWidth, String customLabel) async {
     if (index < _currentPhotos.length) {
       _currentPhotos[index] = _currentPhotos[index].copyWith(
         photoType: type,
         category: category,
+        isFullWidth: isFullWidth,
+        customLabel: customLabel,
       );
       notifyListeners();
 
@@ -127,7 +131,7 @@ class ReportProvider extends ChangeNotifier {
         final photoId = _currentPhotos[index].id;
         if (photoId != null) {
           try {
-            await SupabaseService.updatePhotoMetadata(photoId, type, category);
+            await SupabaseService.updatePhotoMetadata(photoId, type, category, isFullWidth, customLabel);
           } catch (_) {}
         }
       }
@@ -154,7 +158,7 @@ class ReportProvider extends ChangeNotifier {
 
   // --- PHOTOS ---
 
-  Future<void> pickPhotosFromGallery() async {
+  Future<void> pickPhotosFromGallery({String photoType = 'documentation', String category = 'Draught Survey'}) async {
     final picker = ImagePicker();
     final images = await picker.pickMultiImage(imageQuality: 85);
 
@@ -173,6 +177,8 @@ class ReportProvider extends ChangeNotifier {
               localPath: image.path,
               caption: '',
               orderIndex: _currentPhotos.length,
+              photoType: photoType,
+              category: category,
             );
           } else {
             // Local mode
@@ -181,7 +187,10 @@ class ReportProvider extends ChangeNotifier {
               reportId: _currentReport!.id,
               localPath: image.path,
               caption: '',
+              customLabel: '',
               orderIndex: _currentPhotos.length,
+              photoType: photoType,
+              category: category,
             );
           }
           _currentPhotos.add(photo);
@@ -192,7 +201,10 @@ class ReportProvider extends ChangeNotifier {
             reportId: _currentReport!.id,
             localPath: image.path,
             caption: '',
+            customLabel: '',
             orderIndex: _currentPhotos.length,
+            photoType: photoType,
+            category: category,
           );
           _currentPhotos.add(photo);
         }
@@ -204,7 +216,7 @@ class ReportProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> pickPhotoFromCamera() async {
+  Future<void> pickPhotoFromCamera({String photoType = 'documentation', String category = 'Draught Survey'}) async {
     final picker = ImagePicker();
     final image = await picker.pickImage(source: ImageSource.camera, imageQuality: 85);
 
@@ -220,6 +232,8 @@ class ReportProvider extends ChangeNotifier {
             localPath: image.path,
             caption: '',
             orderIndex: _currentPhotos.length,
+            photoType: photoType,
+            category: category,
           );
         } else {
           photo = ReportPhoto(
@@ -227,7 +241,10 @@ class ReportProvider extends ChangeNotifier {
             reportId: _currentReport!.id,
             localPath: image.path,
             caption: '',
+            customLabel: '',
             orderIndex: _currentPhotos.length,
+            photoType: photoType,
+            category: category,
           );
         }
         _currentPhotos.add(photo);
@@ -239,7 +256,10 @@ class ReportProvider extends ChangeNotifier {
           reportId: _currentReport!.id,
           localPath: image.path,
           caption: '',
+          customLabel: '',
           orderIndex: _currentPhotos.length,
+          photoType: photoType,
+          category: category,
         );
         _currentPhotos.add(photo);
         _updateReportPhotos();

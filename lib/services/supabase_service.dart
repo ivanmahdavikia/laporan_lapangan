@@ -79,6 +79,8 @@ class SupabaseService {
     required int orderIndex,
     String photoType = 'documentation',
     String category = 'Draught Survey',
+    bool isFullWidth = false,
+    String customLabel = '',
   }) async {
     // Upload to Supabase Storage
     final file = File(localPath);
@@ -100,9 +102,11 @@ class SupabaseService {
           'local_path': localPath,
           'storage_url': storageUrl,
           'caption': caption,
+          'custom_label': customLabel,
           'order_index': orderIndex,
           'photo_type': photoType,
           'category': category,
+          'is_full_width': isFullWidth,
         })
         .select()
         .single();
@@ -110,12 +114,14 @@ class SupabaseService {
     return ReportPhoto.fromMap(response);
   }
 
-  static Future<void> updatePhotoMetadata(String photoId, String photoType, String category) async {
+  static Future<void> updatePhotoMetadata(String photoId, String photoType, String category, bool isFullWidth, String customLabel) async {
     await client
         .from('report_photos')
         .update({
           'photo_type': photoType,
           'category': category,
+          'is_full_width': isFullWidth,
+          'custom_label': customLabel,
         })
         .eq('id', photoId);
   }

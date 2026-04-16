@@ -27,6 +27,7 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
 
   DateTime _selectedDate = DateTime.now();
   int _photosPerPage = 8;
+  int _targetPages = 12;
 
   @override
   void dispose() {
@@ -66,6 +67,7 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
       shipment: _shipmentCtrl.text.trim(),
       jobNo: _jobNoCtrl.text.trim(),
       photosPerPage: _photosPerPage,
+      targetPages: _targetPages,
     );
 
     if (success && mounted) {
@@ -163,17 +165,19 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
                         _buildField("ID REFERENSI", _refIdCtrl, "REF-2023-001"),
                         const SizedBox(height: 20),
 
-                        // Photos Per Page
-                        Text("FOTO PER HALAMAN", style: GoogleFonts.outfit(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.black45, letterSpacing: 0.5)),
+                        const SizedBox(height: 20),
+                        
+                        // Target Pages
+                        Text("JUMLAH HALAMAN DOKUMENTASI", style: GoogleFonts.outfit(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.black45, letterSpacing: 0.5)),
                         const SizedBox(height: 8),
                         Row(
-                          children: [6, 7, 8].map((n) {
-                            final isSelected = _photosPerPage == n;
+                          children: [4, 8, 12, 18].map((n) {
+                            final isSelected = _targetPages == n;
                             return Expanded(
                               child: GestureDetector(
-                                onTap: () => setState(() => _photosPerPage = n),
+                                onTap: () => setState(() => _targetPages = n),
                                 child: Container(
-                                  margin: EdgeInsets.only(right: n < 8 ? 12 : 0),
+                                  margin: EdgeInsets.only(right: n < 18 ? 12 : 0),
                                   padding: const EdgeInsets.symmetric(vertical: 16),
                                   decoration: BoxDecoration(
                                     color: isSelected ? const Color(0xFF006CFF) : const Color(0xFFF0F3FF),
@@ -181,7 +185,7 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
                                   ),
                                   alignment: Alignment.center,
                                   child: Text(
-                                    "$n foto",
+                                    "$n hal",
                                     style: GoogleFonts.outfit(
                                       fontWeight: FontWeight.bold,
                                       color: isSelected ? Colors.white : Colors.black45,
@@ -192,6 +196,8 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
                             );
                           }).toList(),
                         ),
+                        const SizedBox(height: 12),
+                        const Text("Jumlah halaman yang akan dipersiapkan untuk dokumentasi.", style: TextStyle(color: Colors.black38, fontSize: 12)),
                       ],
                     ),
                   ),

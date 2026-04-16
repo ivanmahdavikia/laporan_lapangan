@@ -8,13 +8,14 @@ class PdfGenerator {
   static Future<File> generateReport(Report report) async {
     final pdf = pw.Document();
     
-    // 1. Pre-load and categorize photos
+    // 1. Pre-load and separate photos
     final List<ReportPhoto> formPhotos = [];
-    final List<ReportPhoto> draughtPhotos = [];
-    final List<ReportPhoto> samplingPhotos = [];
-    final List<ReportPhoto> preparasiPhotos = [];
+    final List<ReportPhoto> documentationPhotos = [];
 
-    for (final photo in report.photos) {
+    final sortedPhotos = List<ReportPhoto>.from(report.photos);
+    sortedPhotos.sort((a, b) => a.orderIndex.compareTo(b.orderIndex));
+
+    for (final photo in sortedPhotos) {
       final file = File(photo.localPath);
       if (await file.exists()) {
         final bytes = await file.readAsBytes();
@@ -23,16 +24,7 @@ class PdfGenerator {
         if (photo.photoType == 'form') {
           formPhotos.add(loadedPhoto);
         } else {
-          switch (photo.category) {
-            case 'Sampling':
-              samplingPhotos.add(loadedPhoto);
-              break;
-            case 'Preparasi':
-              preparasiPhotos.add(loadedPhoto);
-              break;
-            default:
-              draughtPhotos.add(loadedPhoto);
-          }
+          documentationPhotos.add(loadedPhoto);
         }
       }
     }
@@ -40,80 +32,105 @@ class PdfGenerator {
     // 2. Page 1: COVER
     pdf.addPage(_buildCoverPage(report));
 
-    // 3. Page 2-11: DOCUMENTS (FORM)
-    // Client wants exactly pages 2-11 for documents (up to 10 photos)
+    // 3. Page 2-11: DOCUMENTS (FORM) - Exactly 10 pages
+    // One photo per page
     for (int i = 0; i < 10; i++) {
       final photo = i < formPhotos.length ? formPhotos[i] : null;
-      pdf.addPage(_buildDocumentPage(photo, i + 2));
+      pdf.addPage(_buildDocumentPage(photo, i + 2, report));
     }
 
-    // 4. Page 12+: DOCUMENTATION
-    int currentPageNum = 12;
+    // 4. Page 12+: DYNAMIC DOCUMENTATION PAGES
+    // We generate exactly the number of pages requested by the user
+    int photoIdx = 0;
+    int totalDocs = documentationPhotos.length;
 
-    // LAMPIRAN I: Draught Survey
-    final draughtLabels = [
-      'Kondisi Vessel / Tongkang (Visual Check)',
-      'Kondisi Batubara di Vessel / Tongkang',
-      'Kondisi Pembongkaran',
-      'Kondisi Pembongkaran',
-    ];
-    currentPageNum = _addDocumentationPages(
-      pdf, 
-      draughtPhotos, 
-      draughtLabels, 
-      'Lampiran I', 
-      'Draught Survey & Kondisi Vessel', 
-      currentPageNum, 
-      report
-    );
+    for (int pIdx = 0; pIdx < report.targetPages; pIdx++) {
+      final List<_PageRowData> pageRows = [];
+      
+      // Each page has 4 slots (rows)
+      for (int r = 0; r < 4; r++) {
+        ReportPhoto? p1;
+        ReportPhoto? p2;
+        int displayIdx = photoIdx;
 
-    // LAMPIRAN II: Sampling
-    final samplingLabels = [
-      'Pengambilan Sample',
-      'Proses Penyegelan Sample',
-      'Hasil Proses Sampling',
-      'Proses Penurunan Sample',
-    ];
-    currentPageNum = _addDocumentationPages(
-      pdf, 
-      samplingPhotos, 
-      samplingLabels, 
-      'Lampiran II', 
-      'Sampling', 
-      currentPageNum, 
-      report
-    );
+        if (photoIdx < totalDocs) {
+          p1 = documentationPhotos[photoIdx++];
+          // If NOT full width and there's another photo, and that next photo is also NOT full width
+          if (!p1.isFullWidth && photoIdx < totalDocs && !documentationPhotos[photoIdx].isFullWidth) {
+            p2 = documentationPhotos[photoIdx++];
+          }
+        }
+        
+        final label = p1?.customLabel.isNotEmpty == true 
+            ? p1!.customLabel 
+            : (p1 == null ? 'Lain-lain' : 'Dokumentasi Lapangan');
 
-    // LAMPIRAN III: Preparasi
-    final preparasiLabels = [
-      'Crushing 4,75 mESH',
-      'RSD (Pengambilan 1/8 Sample)',
-      'Sample 1/8 Crusher jadi 4,75 mm',
-      'Packing 4,75 Basah',
-      'Penentuan ADL Awal',
-      'Penentuan ADL Akhir',
-      'Formulir ADL',
-      'Packing 4,75 Kering',
-      'RSD dari sample (TM + GA 4kg)',
-      'Crusher 0,212 mm (mess 60)',
-      'Packing Mess 60',
-      'Penentuan RM',
-      'Penentuan TM',
-      'Segel Umpire Sample',
-    ];
-    currentPageNum = _addDocumentationPages(
-      pdf, 
-      preparasiPhotos, 
-      preparasiLabels, 
-      'Lampiran III', 
-      'Preparasi', 
-      currentPageNum, 
-      report
-    );
+        pageRows.add(_PageRowData(
+          label: label, 
+          p1: p1, 
+          p2: p2, 
+          baseIdx: displayIdx + 1
+        ));
+      }
+
+      pdf.addPage(
+        pw.Page(
+          pageFormat: PdfPageFormat.a4,
+          margin: const pw.EdgeInsets.all(30),
+          build: (context) => pw.Column(
+            children: [
+              pw.Center(child: pw.Text('LAMPIRAN DOKUMENTASI', style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold))),
+              pw.SizedBox(height: 10),
+              pw.Center(child: pw.Text(report.title, style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold))),
+              pw.SizedBox(height: 20),
+
+              pw.Table(
+                border: pw.TableBorder.all(color: PdfColors.black, width: 0.5),
+                columnWidths: {
+                  0: const pw.FixedColumnWidth(110), 
+                  1: const pw.FlexColumnWidth(), 
+                  2: const pw.FixedColumnWidth(110)
+                },
+                children: pageRows.map((row) {
+                  if (row.p1 != null && row.p1!.isFullWidth) {
+                    return pw.TableRow(
+                      children: [
+                        _buildLabelCell(row.label),
+                        _buildSinglePhotoCell(row.p1!, row.baseIdx),
+                        _buildKeteranganCell(row.p1),
+                      ],
+                    );
+                  } else {
+                    return pw.TableRow(
+                      children: [
+                        _buildLabelCell(row.label),
+                        _buildPhotoPairCell(row.p1, row.p2, row.baseIdx),
+                        _buildKeteranganCell(row.p1),
+                      ],
+                    );
+                  }
+                }).toList(),
+              ),
+              
+              pw.Spacer(),
+              pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                children: [
+                  pw.Text('ID: ${report.referenceId}', style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700)),
+                  pw.Text('Tgl: ${_formatDate(report.date)}', style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700)),
+                  pw.Text('Halaman ${pIdx + 12}', style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700)),
+                ],
+              ),
+            ],
+          ),
+        ),
+      );
+    }
 
     // Save to file
     final outputDir = await getApplicationDocumentsDirectory();
-    final fileName = 'Laporan_${report.referenceId}_${DateTime.now().millisecondsSinceEpoch}.pdf';
+    final sanitizedRef = report.referenceId.replaceAll(RegExp(r'[<>:"/\\|?*]'), '_');
+    final fileName = 'Laporan_${sanitizedRef}_${DateTime.now().millisecondsSinceEpoch}.pdf';
     final file = File('${outputDir.path}/$fileName');
     await file.writeAsBytes(await pdf.save());
 
@@ -173,92 +190,48 @@ class PdfGenerator {
     );
   }
 
-  static pw.Page _buildDocumentPage(ReportPhoto? photo, int pageNum) {
+  static pw.Page _buildDocumentPage(ReportPhoto? photo, int pageNum, Report report) {
     return pw.Page(
       pageFormat: PdfPageFormat.a4,
+      margin: const pw.EdgeInsets.all(20),
       build: (context) => pw.Column(
         children: [
-          pw.SizedBox(height: 24),
-          pw.Text('DOKUMEN PENDUKUNG', style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)),
-          pw.SizedBox(height: 24),
+          pw.Text('DOKUMEN PENDUKUNG (Halaman $pageNum)', 
+            style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold, color: PdfColors.grey700)),
+          pw.SizedBox(height: 10),
           if (photo?.bytes != null)
-            pw.Expanded(child: pw.Center(child: pw.Image(pw.MemoryImage(photo!.bytes!), fit: pw.BoxFit.contain)))
+            pw.Expanded(
+              child: pw.Center(
+                child: pw.Image(
+                  pw.MemoryImage(photo!.bytes!), 
+                  fit: pw.BoxFit.contain,
+                ),
+              ),
+            )
           else
             pw.Expanded(
               child: pw.Container(
-                decoration: pw.BoxDecoration(border: pw.Border.all(color: PdfColors.grey200, style: pw.BorderStyle.dashed)),
+                width: double.infinity,
+                decoration: pw.BoxDecoration(
+                  border: pw.Border.all(color: PdfColors.grey200, style: pw.BorderStyle.dashed),
+                ),
                 alignment: pw.Alignment.center,
-                child: pw.Text('SLOT DOKUMEN KOSONG', style: const pw.TextStyle(color: PdfColors.grey300)),
+                child: pw.Text('SLOT DOKUMEN KOSONG', 
+                  style: const pw.TextStyle(color: PdfColors.grey300, fontSize: 16)),
               ),
             ),
-          pw.SizedBox(height: 24),
-          pw.Text('Halaman $pageNum', style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey)),
-          pw.SizedBox(height: 24),
+          pw.SizedBox(height: 10),
+          pw.Divider(color: PdfColors.grey300),
+          pw.Row(
+            mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+            children: [
+              pw.Text('ID: ${report.referenceId}', style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey500)),
+              pw.Text('Dokumen Pendukung', style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey500)),
+            ],
+          ),
         ],
       ),
     );
-  }
-
-  static int _addDocumentationPages(pw.Document pdf, List<ReportPhoto> photos, List<String> labels, String lampiranPrefix, String title, int startPageNum, Report report) {
-    int totalPhotos = photos.length;
-    int photoCounter = 0;
-    int pageIdx = 0;
-    
-    // Each page has 4 rows, each row has 2 photos = 8 photos per page
-    int totalPagesForThisCategory = (labels.length / 4).ceil();
-    if (totalPagesForThisCategory == 0) totalPagesForThisCategory = 1;
-
-    for (int pIdx = 0; pIdx < totalPagesForThisCategory; pIdx++) {
-      final suffix = totalPagesForThisCategory > 1 ? '-${String.fromCharCode(65 + pIdx)}' : '';
-      
-      pdf.addPage(
-        pw.Page(
-          pageFormat: PdfPageFormat.a4,
-          margin: const pw.EdgeInsets.all(30),
-          build: (context) => pw.Column(
-            children: [
-              pw.Center(child: pw.Text('$lampiranPrefix$suffix', style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold))),
-              pw.SizedBox(height: 10),
-              pw.Center(child: pw.Text('Dokumentasi $title', style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold))),
-              pw.SizedBox(height: 20),
-
-              pw.Table(
-                border: pw.TableBorder.all(color: PdfColors.black, width: 0.5),
-                columnWidths: {0: const pw.FixedColumnWidth(110), 1: const pw.FlexColumnWidth(), 2: const pw.FixedColumnWidth(110)},
-                children: List.generate(4, (rowInPage) {
-                  final labelIdx = (pIdx * 4) + rowInPage;
-                  final label = labelIdx < labels.length ? labels[labelIdx] : 'Lain-lain';
-                  
-                  final p1 = photoCounter < totalPhotos ? photos[photoCounter++] : null;
-                  final p2 = photoCounter < totalPhotos ? photos[photoCounter++] : null;
-                  
-                  return pw.TableRow(
-                    children: [
-                      _buildLabelCell(label),
-                      _buildPhotoPairCell(p1, p2, photoCounter - 1),
-                      _buildKeteranganCell(p1),
-                    ],
-                  );
-                }),
-              ),
-              
-              pw.Spacer(),
-              pw.Row(
-                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                children: [
-                  pw.Text('ID: ${report.referenceId}', style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700)),
-                  pw.Text('Tgl: ${_formatDate(report.date)}', style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700)),
-                  pw.Text('Halaman ${startPageNum + pageIdx}', style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700)),
-                ],
-              ),
-            ],
-          ),
-        ),
-      );
-      pageIdx++;
-    }
-
-    return startPageNum + pageIdx;
   }
 
   static pw.Widget _buildLabelCell(String text) {
@@ -267,6 +240,13 @@ class PdfGenerator {
       height: 165,
       alignment: pw.Alignment.topLeft,
       child: pw.Text(text, style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
+    );
+  }
+
+  static pw.Widget _buildSinglePhotoCell(ReportPhoto photo, int index) {
+    return pw.Container(
+      padding: const pw.EdgeInsets.symmetric(vertical: 10, horizontal: 20),
+      child: _buildPhotoBox(photo, index, isLarge: true),
     );
   }
 
@@ -284,9 +264,9 @@ class PdfGenerator {
     );
   }
 
-  static pw.Widget _buildPhotoBox(ReportPhoto? photo, int index) {
+  static pw.Widget _buildPhotoBox(ReportPhoto? photo, int index, {bool isLarge = false}) {
     return pw.Container(
-      width: 110,
+      width: isLarge ? 240 : 110,
       height: 145,
       decoration: pw.BoxDecoration(
         border: pw.Border.all(color: PdfColors.black, width: 0.5),
@@ -294,7 +274,7 @@ class PdfGenerator {
       ),
       child: photo?.bytes != null
           ? pw.Image(pw.MemoryImage(photo!.bytes!), fit: pw.BoxFit.cover)
-          : pw.Center(child: pw.Text('GAMBAR $index', style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey400))),
+          : pw.Center(child: pw.Text('SLOT ${index.toString().padLeft(2, '0')}', style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey400))),
     );
   }
 
@@ -323,4 +303,13 @@ class PdfGenerator {
     const months = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
     return '${date.day} ${months[date.month - 1]} ${date.year}';
   }
+}
+
+class _PageRowData {
+  final String label;
+  final ReportPhoto? p1;
+  final ReportPhoto? p2;
+  final int baseIdx;
+
+  _PageRowData({required this.label, this.p1, this.p2, required this.baseIdx});
 }
